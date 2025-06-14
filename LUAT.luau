@@ -4,20 +4,25 @@ local function getLastFiveChars(str)
 	return string.sub(str, -5)
 end
 
-local function serializeTable(tbl)
-	local function serialize(value)
+local function serializeTable(tbl, pretty, indentLevel)
+	indentLevel = indentLevel or 0
+	local indent = pretty and string.rep("  ", indentLevel) or ""
+	local newline = pretty and "\n" or ""
+	local space = pretty and " " or ""
+
+	local function serialize(value, level)
 		if type(value) == "string" then
 			return string.format("%q", value)
 		elseif type(value) == "number" or type(value) == "boolean" then
 			return tostring(value)
 		elseif type(value) == "table" then
-			return serializeTable(value)
+			return serializeTable(value, pretty, level)
 		else
 			return "nil"
 		end
 	end
 
-	local result = "{"
+	local result = "{" .. newline
 	for k, v in pairs(tbl) do
 		local keyStr
 		if type(k) == "string" then
@@ -28,10 +33,14 @@ local function serializeTable(tbl)
 			keyStr = "[nil]" 
 		end
 
-		local valStr = serialize(v)
-		result = result .. keyStr .. "=" .. valStr .. ","
+		local valStr = serialize(v, indentLevel + 1)
+		if pretty then
+			result = result .. string.rep("  ", indentLevel + 1) .. keyStr .. "=" .. space .. valStr .. "," .. newline
+		else
+			result = result .. keyStr .. "=" .. valStr .. ","
+		end
 	end
-	result = result .. "}"
+	result = result .. indent .. "}"
 	return result
 end
 
@@ -124,18 +133,17 @@ function module.ReadFile(Path)
 	return nil
 end
 
-
-function module.WriteFile(Path, Value)
+function module.WriteFile(Path, Value, pretty:boolean)
     local TestPath = string.lower(Path)
     if getLastFiveChars(TestPath) == ".luat" then
         ensureDirectoriesExist(Path)
-        local StrData = serializeTable(Value)
+        local StrData = serializeTable(Value, pretty)
         FS.writeFile(Path, StrData)
     end
 end
 
-function module.Encode(Value)
-    local StrData = serializeTable(Value)
+function module.Encode(Value, pretty)
+    local StrData = serializeTable(Value, pretty)
     return StrData
 end
 
@@ -143,7 +151,5 @@ function module.Decode(StrData)
     local TableData = deserializeTable(StrData)
     return TableData
 end
-
-
 
 return module
