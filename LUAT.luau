@@ -35,9 +35,9 @@ local function serializeTable(tbl, pretty, indentLevel)
 
 		local valStr = serialize(v, indentLevel + 1)
 		if pretty then
-			table.insert(parts, string.rep("  ", indentLevel + 1) .. keyStr .. "=" .. space .. valStr)
+			table.insert(parts, string.rep("  ", indentLevel + 1) .. keyStr .. " =" .. space .. valStr)
 		else
-			table.insert(parts, keyStr .. "=" .. valStr)
+			table.insert(parts, keyStr .. " =" .. valStr)
 		end
 	end
 
