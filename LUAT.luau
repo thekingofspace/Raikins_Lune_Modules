@@ -22,7 +22,7 @@ local function serializeTable(tbl, pretty, indentLevel)
 		end
 	end
 
-	local result = "{" .. newline
+	local parts = {}
 	for k, v in pairs(tbl) do
 		local keyStr
 		if type(k) == "string" then
@@ -30,18 +30,19 @@ local function serializeTable(tbl, pretty, indentLevel)
 		elseif type(k) == "number" then
 			keyStr = "[" .. k .. "]"
 		else
-			keyStr = "[nil]" 
+			keyStr = "[nil]"
 		end
 
 		local valStr = serialize(v, indentLevel + 1)
 		if pretty then
-			result = result .. string.rep("  ", indentLevel + 1) .. keyStr .. "=" .. space .. valStr .. "," .. newline
+			table.insert(parts, string.rep("  ", indentLevel + 1) .. keyStr .. "=" .. space .. valStr)
 		else
-			result = result .. keyStr .. "=" .. valStr .. ","
+			table.insert(parts, keyStr .. "=" .. valStr)
 		end
 	end
-	result = result .. indent .. "}"
-	return result
+
+	local joined = table.concat(parts, "," .. newline)
+	return "{" .. newline .. joined .. newline .. indent .. "}"
 end
 
 local function deserializeTable(str)
@@ -63,28 +64,50 @@ local function deserializeTable(str)
 
 	local function parseTable(tblStr)
 		local out = {}
-		for key, val in tblStr:gmatch("%[(.-)%]%s*=%s*([^,%}]+)") do
-			local parsedKey = parseValue(key)
-			local parsedVal
-			if string.sub(val, 1, 1) == "{" then
-				local depth = 0
-				local sub = ""
-				local i = 1
-				while i <= #val do
-					local char = val:sub(i, i)
-					if char == "{" then depth = depth + 1 end
-					if char == "}" then depth = depth - 1 end
-					sub = sub .. char
+		local i = 1
+		while i <= #tblStr do
+			local keyStart, keyEnd = tblStr:find("%[.-%]", i)
+			if not keyStart then break end
+
+			local keyStr = tblStr:sub(keyStart + 1, keyEnd - 1)
+			i = keyEnd + 1
+
+			local eqStart, eqEnd = tblStr:find("=", i)
+			if not eqStart then break end
+			i = eqEnd + 1
+
+			local valStr
+			if tblStr:sub(i, i) == "{" then
+				local depth, j = 1, i + 1
+				while j <= #tblStr do
+					if tblStr:sub(j, j) == "{" then depth = depth + 1 end
+					if tblStr:sub(j, j) == "}" then depth = depth - 1 end
 					if depth == 0 then break end
-					i = i + 1
+					j = j + 1
 				end
-				parsedVal = parseTable(sub)
+				valStr = tblStr:sub(i, j)
+				i = j + 1
 			else
-				parsedVal = parseValue(val)
+				local valStart, valEnd = tblStr:find("[^,%}]+", i)
+				if not valStart then break end
+				valStr = tblStr:sub(valStart, valEnd)
+				i = valEnd + 1
 			end
 
-			if parsedKey ~= nil then
-				out[parsedKey] = parsedVal
+			local key = parseValue(keyStr)
+			local value
+			if valStr:sub(1, 1) == "{" then
+				value = parseTable(valStr:sub(2, -2))
+			else
+				value = parseValue(valStr:match("^%s*(.-)%s*$"))
+			end
+
+			if key ~= nil then
+				out[key] = value
+			end
+
+			if tblStr:sub(i, i) == "," then
+				i = i + 1
 			end
 		end
 		return out
@@ -92,8 +115,9 @@ local function deserializeTable(str)
 
 	str = str:match("^%s*(%b{})%s*$")
 	if not str then return {} end
-	return parseTable(str)
+	return parseTable(str:sub(2, -2))
 end
+
 
 local module = {}
 
