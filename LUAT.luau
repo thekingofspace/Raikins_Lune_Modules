@@ -46,77 +46,102 @@ local function serializeTable(tbl, pretty, indentLevel)
 end
 
 local function deserializeTable(str)
-	local function parseValue(v)
-		if v == "true" then
-			return true
-		elseif v == "false" then
-			return false
-		elseif v == "nil" then
-			return nil
-		elseif tonumber(v) then
-			return tonumber(v)
-		elseif string.sub(v, 1, 1) == '"' or string.sub(v, 1, 1) == "'" then
-			return v:sub(2, -2):gsub('\\"', '"'):gsub("\\'", "'")
-		else
-			return nil
-		end
-	end
+    local function trim(s)
+        return s:match("^%s*(.-)%s*$")
+    end
 
-	local function parseTable(tblStr)
-		local out = {}
-		local i = 1
-		while i <= #tblStr do
-			local keyStart, keyEnd = tblStr:find("%[.-%]", i)
-			if not keyStart then break end
+    local function parseString(s)
+        s = s:sub(2, -2)
+        s = s:gsub('\\"', '"'):gsub('\\\\', '\\')
+        return s
+    end
 
-			local keyStr = tblStr:sub(keyStart + 1, keyEnd - 1)
-			i = keyEnd + 1
+    local function parseValue(s)
+        s = trim(s)
+        if s == "true" then
+            return true
+        elseif s == "false" then
+            return false
+        elseif s == "nil" then
+            return nil
+        elseif tonumber(s) then
+            return tonumber(s)
+        elseif s:sub(1,1) == '"' and s:sub(-1) == '"' then
+            return parseString(s)
+        elseif s:sub(1,1) == "{" and s:sub(-1) == "}" then
+            return parseTable(s)
+        else
+            error("Unknown value: " .. s)
+        end
+    end
 
-			local eqStart, eqEnd = tblStr:find("=", i)
-			if not eqStart then break end
-			i = eqEnd + 1
+    local function splitKeyValues(s)
+        local parts = {}
+        local braceLevel = 0
+        local inString = false
+        local current = ""
+        local i = 1
+        while i <= #s do
+            local c = s:sub(i,i)
+            if c == '"' and (i == 1 or s:sub(i-1,i-1) ~= '\\') then
+                inString = not inString
+                current = current .. c
+            elseif not inString then
+                if c == "{" then
+                    braceLevel = braceLevel + 1
+                    current = current .. c
+                elseif c == "}" then
+                    braceLevel = braceLevel - 1
+                    current = current .. c
+                elseif (c == "," or c == ";") and braceLevel == 0 then
+                    table.insert(parts, current)
+                    current = ""
+                else
+                    current = current .. c
+                end
+            else
+                current = current .. c
+            end
+            i = i + 1
+        end
+        if current ~= "" then
+            table.insert(parts, current)
+        end
+        return parts
+    end
 
-			local valStr
-			if tblStr:sub(i, i) == "{" then
-				local depth, j = 1, i + 1
-				while j <= #tblStr do
-					if tblStr:sub(j, j) == "{" then depth = depth + 1 end
-					if tblStr:sub(j, j) == "}" then depth = depth - 1 end
-					if depth == 0 then break end
-					j = j + 1
-				end
-				valStr = tblStr:sub(i, j)
-				i = j + 1
-			else
-				local valStart, valEnd = tblStr:find("[^,%}]+", i)
-				if not valStart then break end
-				valStr = tblStr:sub(valStart, valEnd)
-				i = valEnd + 1
-			end
+    function parseTable(s)
+        assert(s:sub(1,1) == "{" and s:sub(-1) == "}", "Table must start with { and end with }")
+        local inner = s:sub(2, -2)
+        local result = {}
 
-			local key = parseValue(keyStr)
-			local value
-			if valStr:sub(1, 1) == "{" then
-				value = parseTable(valStr:sub(2, -2))
-			else
-				value = parseValue(valStr:match("^%s*(.-)%s*$"))
-			end
+        local keyValues = splitKeyValues(inner)
+        for _, part in ipairs(keyValues) do
+            part = trim(part)
+            if part ~= "" then
+                local key, value = part:match("^%[([^%]]+)%]%s*=%s*(.+)$")
+                if key then
+                    key = trim(key)
+                    if key:sub(1,1) == '"' and key:sub(-1) == '"' then
+                        key = parseString(key)
+                    elseif tonumber(key) then
+                        key = tonumber(key)
+                    else
+                        key = key
+                    end
+                    result[key] = parseValue(value)
+                else
+                    local val = parseValue(part)
+                    table.insert(result, val)
+                end
+            end
+        end
+        return result
+    end
 
-			if key ~= nil then
-				out[key] = value
-			end
-
-			if tblStr:sub(i, i) == "," then
-				i = i + 1
-			end
-		end
-		return out
-	end
-
-	str = str:match("^%s*(%b{})%s*$")
-	if not str then return {} end
-	return parseTable(str:sub(2, -2))
+    return parseTable(str)
 end
+
 
 
 local module = {}
